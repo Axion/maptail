@@ -330,7 +330,8 @@
 
 		function initWebsocketConnection() {
 			var server = new io.Socket(null, {
-				  'rememberTransport': false
+          'port': WSPORT
+        , 'rememberTransport': false
 				, 'transports': [
 					'websocket'
 					, 'flashsocket'
