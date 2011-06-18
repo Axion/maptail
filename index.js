@@ -7,22 +7,24 @@ exports.listen = function(options){
     setTimeout(function(){
       fs.renameSync(options.filename, options.filename + ((new Date).getTime() / ( 24 * 60 * 60 * 1000 )));
     }, ( 24 * 60 * 60 *1000 ));
-    
+
     var spawn = require('child_process').spawn
     
       , express = require('express')
       , io = require('socket.io')
       
       , geoip = require('geoip')
-      , cities = geoip.open(__dirname + '/GeoLiteCity.dat')
+      , cities = new geoip.City(__dirname + '/GeoLiteCity.dat')//geoip.check(__dirname + '/GeoLiteCity.dat')
       
       , wsport = options.wsport
       , wshost = options.wshost
       
       , filename = options.filename
+      , lines = options.lines
+      , fadetime = options.fadetime;
     
     // configuration  
-    var app = express.createServer()
+    var app = express.createServer();
     
     app.configure(function(){
       app.use(express.static(__dirname + '/public'));
@@ -46,25 +48,25 @@ exports.listen = function(options){
     
     var allowedIPs = {}
       , connected = {}
-      , users = {}
+      , users = {};
     
     app.get('/', function(req, res) {
       res.redirect('/map');
-    })
+    });
     
     app.get('/map', function(req, res) {
       res.render('map', { layout: false, locals: { title: 'tail -f ' + filename, wshost: wshost, wsport: wsport } })
-    })
+    });
     
     // get configuration information
     app.get('/js/config.js', function(req, res) {
       html = [
         'var WSHOST = "' + wshost + '";'
       + 'var WSPORT = ' + wsport + ';'
-      ]
+      ];
       
       res.send(html.join('\n'))
-    })
+    });
     /*
     app.get('/admin', function(req, res) {
       req.users.list(function(err, data) {
@@ -78,20 +80,20 @@ exports.listen = function(options){
     
     //var wsserver = http.createServer()
     //wsserver.listen(wsport, wshost);
-    var socket = io.listen(options.server)
+    var socket = io.listen(options.server);
     
     socket.on('connection', function(client) {
       var id = client.sessionId
-        , ip = client && client.request && client.request.socket && client.request.socket.remoteAddress || '000'
+        , ip = client && client.request && client.request.socket && client.request.socket.remoteAddress || '000';
     
-      connected[id] = client
+      connected[id] = client;
     
-      world.sendStartupData(client)  
+      world.sendStartupData(client);
     
       client.on('disconnect', function() {
         delete connected[id]
       })
-    })
+    });
     
     var world = {
       users: {}
@@ -108,13 +110,13 @@ exports.listen = function(options){
       }
       
     , sendUpdate: function(from, silent) {
-        var self = this
+        var self = this;
     
         self.messages.push({
     	    'user': from.name
-        , 'city': from.city
+          , 'city': from.city
     	  , 'message': from.line
-    		})
+    		});
     
     		if (self.messages.length > 10) {
     			self.messages.shift()
@@ -125,7 +127,7 @@ exports.listen = function(options){
             'action': 'newMessage'
           , 'from': self.getPublicUserInfo(from)
           , 'messageCount': self.messageCount
-          }
+          };
     
           if (!silent) {
             if (self.messages.length) {
@@ -144,38 +146,38 @@ exports.listen = function(options){
       }
       
     , sendStartupData: function (client) {
-        var self = this
+        var self = this;
     
-        var activityLimit = new Date().getTime() - 2400000
-        var userList = {}
+        var activityLimit = new Date().getTime() - fadetime;
+        var userList = {};
     
         Object.keys(self.users).forEach(function (name) {
-          var user = self.users[name]
+          var user = self.users[name];
           if (user.lat && user.lastActivity > activityLimit) {
             userList[name] = self.getPublicUserInfo(user)
           } else {
             delete self.users[name]
           }
-        })
+        });
     
         client.send(JSON.stringify({
           'action': 'getUsers'
         , 'users': userList
-        , 'removeTimeout': 2400000
+        , 'removeTimeout': fadetime
         , 'channel': 'maptail.log' // filename
         , 'messages': self.messages
         , 'messageCount': self.messageCount
         , 'serverTime': new Date().getTime()
         }))
       }
-    }
+    };
     
     // tail -n 1000 -f filename
-    
-    var tail = spawn('tail', ['-n', '1000', '-f', filename])
-    
+
+    var tail = spawn('tail', ['-n', lines, '-f', filename]);
+
     tail.stdout.on('data', function (data) {
-      var dataStr = data.toString()
+      var dataStr = data.toString();
       
       dataStr.replace(/([^\n]+)\n/g, function(m, line) {
         // proxy tail ...MOD
@@ -183,18 +185,18 @@ exports.listen = function(options){
       
         var ipsArray = line.match(/(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/gm) || []
           , ips = {}
-          , ipsplit = []
+          , ipsplit = [];
         
         ipsArray.forEach(function(ip) {
           // no version numbers
-          ipsplit = ip.split('.')
+          ipsplit = ip.split('.');
           for (var i = 0, c = 0; i < ipsplit.length; i++) {
-            if (ipsplit[i] < 10) c++
+            if (ipsplit[i] < 10) c++;
             if (c === 3) return
           }
           
           ips[ip] = { name: ip, line: htmlspecialchars(line), lastActivity: Date.now() }
-        })
+        });
     
         for (var ip in ips) {
           // Return an object of city information
@@ -213,46 +215,47 @@ exports.listen = function(options){
           //  "area_code":650
           //  }
           if (typeof ips[ip].city === 'undefined') {
-            city = geoip.City.record_by_addr(cities, ip)
+            //city = geoip.City.record_by_addr(cities, ip)
+            city = cities.lookupSync(ip);
             if (city) {
-              ips[ip].city = city
-              ips[ip].lat = city.latitude
-              ips[ip].lng = city.longitude
+              ips[ip].city = city;
+              ips[ip].lat = city.latitude;
+              ips[ip].lng = city.longitude;
               
-              world.messageCount++
-              world.users[ip] = ips[ip]
+              world.messageCount++;
+              world.users[ip] = ips[ip];
               
               world.sendUpdate(ips[ip])
             } else {
-              ips[ip].city = {}
-              ips[ip].lat = 0
-              ips[ip].lng = 0
+              ips[ip].city = {};
+              ips[ip].lat = 0;
+              ips[ip].lng = 0;
               console.log('Could not grab location for', ip, ' - ', city)
             }
           }
         }
       })
-    })
+    });
     
     tail.stderr.on('data', function (data) {
       console.log('tail stderr: ' + data)
-    })
+    });
     
     tail.on('exit', function (code) {
       if (code !== 0) {
         console.log('tail process exited with code ' + code);
       }
-    })
+    });
     
     // functions
     
     var broadcast = function(msg) {
-      var json = JSON.stringify(msg)
+      var json = JSON.stringify(msg);
     
       for (var id in connected) {
         connected[id].send(json)
       }
-    }
+    };
     
     var htmlspecialchars = function (string, quote_style, charset, double_encode) {
       // http://kevin.vanzonneveld.net
@@ -318,4 +321,4 @@ exports.listen = function(options){
     
       return string;
     }
-}
+};
